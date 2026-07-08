@@ -444,7 +444,7 @@
         <button id="resetPose">Reset pose</button>
         <button id="clearAll">Clear all</button>
       </div>
-      <p class="anchor-hint">Moving the climber: drag the torso line to move the whole body. The hip joint shifts just the hips. Anchoring: drag a hand or foot onto a hold to pin it there — pinned limbs stay on their holds while the body moves. Tap a pinned limb, or drag it off, to release.</p>
+      <p class="anchor-hint">Moving the climber: drag the ✛ badge beside the figure (or the torso line) to move the whole body. The hip joint shifts just the hips. Anchoring: drag a hand or foot onto a hold to pin it there — pinned limbs stay on their holds while the body moves. Tap a pinned limb, or drag it off, to release.</p>
       <p class="anchor-hint">Zoom: scroll or pinch on the photo to zoom; in Move mode drag empty background to pan. Snapshots capture the zoomed view, so zoom in to feature a specific move.</p>
     </div>
   </aside>
@@ -712,7 +712,8 @@ overlay.addEventListener("pointerup", e=>{
     x: clamp(p.x, 0, state.imgW),
     y: clamp(p.y, 0, state.imgH),
     name: "",
-    color: HOLD_COLORS[0]
+    color: HOLD_COLORS[0],
+    size: 1/view.scale        // marked while zoomed -> proportionally smaller marker
   };
   state.holds.push(hold);
   state.selectedHold = hold.id;
@@ -1025,25 +1026,26 @@ function renderHoldsSVG(){
   holdLayer.innerHTML = "";
   const u = unit();
   state.holds.forEach(h=>{
+    const s = h.size || 1;
     const g = el("g",{class:"hold-marker"});
     const sel = state.selectedHold===h.id;
-    // chalk-circle style marker
-    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*1.9, fill:"none",
-      stroke:h.color, "stroke-width":u*0.5,
-      "stroke-dasharray": sel ? "" : `${u*1.2} ${u*0.7}`}));
-    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*0.45, fill:h.color}));
+    // chalk-circle style marker (scaled for holds marked while zoomed)
+    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*1.9*s, fill:"none",
+      stroke:h.color, "stroke-width":u*0.5*s,
+      "stroke-dasharray": sel ? "" : `${u*1.2*s} ${u*0.7*s}`}));
+    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*0.45*s, fill:h.color}));
     // invisible fat hit area (never smaller than a fingertip on screen)
-    const hit = el("circle",{cx:h.x, cy:h.y, r:Math.max(u*2.6, minHitImg(HIT_CSS)), fill:"transparent"});
+    const hit = el("circle",{cx:h.x, cy:h.y, r:Math.max(u*2.6*s, minHitImg(HIT_CSS)), fill:"transparent"});
     hit.dataset.holdId = h.id;
     g.appendChild(hit);
     if(h.name){
       const label = el("text",{
-        x:h.x + u*2.5, y:h.y - u*1.6,
-        "font-size":u*2.1,
+        x:h.x + u*2.5*s, y:h.y - u*1.6*s,
+        "font-size":u*2.1*s,
         "font-family":"'IBM Plex Mono',monospace",
         "font-weight":"600",
         fill:h.color,
-        stroke:"rgba(0,0,0,.85)","stroke-width":u*0.55,
+        stroke:"rgba(0,0,0,.85)","stroke-width":u*0.55*s,
         "paint-order":"stroke"
       });
       label.textContent = h.name;
@@ -1132,6 +1134,42 @@ function renderFigureSVG(){
     }
     figureLayer.appendChild(c);
   }
+
+  // detached whole-climber handle: a move badge floating beside the figure,
+  // tethered to the hip — a big, unambiguous target for moving the whole body
+  {
+    const hr2 = Math.max(u*1.7, minHitImg(COARSE ? 24 : 18));
+    const xs = Object.values(J).map(p=>p.x);
+    let hx = Math.max(...xs) + hr2*2.1;
+    let hy = J.hip.y;
+    if(hx > state.imgW - hr2*1.2) hx = Math.min(...xs) - hr2*2.1;  // flip left near the edge
+    hx = clamp(hx, hr2*1.2, state.imgW - hr2*1.2);
+    hy = clamp(hy, hr2*1.2, state.imgH - hr2*1.2);
+    // leader line to the hip
+    figureLayer.appendChild(el("line",{x1:J.hip.x, y1:J.hip.y, x2:hx, y2:hy,
+      stroke:"rgba(255,210,63,.5)", "stroke-width":u*0.22,
+      "stroke-dasharray":`${u*0.8} ${u*0.6}`, "pointer-events":"none"}));
+    // badge
+    const badge = el("circle",{class:"joint", cx:hx, cy:hy, r:hr2,
+      fill:"rgba(29,33,41,.92)", stroke:"#ffd23f", "stroke-width":Math.max(u*0.3, hr2*0.08)});
+    badge.dataset.figureMove = "1";
+    const bt = el("title",{});
+    bt.textContent = "Drag to move the whole climber";
+    badge.appendChild(bt);
+    figureLayer.appendChild(badge);
+    // move-cross glyph
+    const arm = hr2*0.52, ah = hr2*0.26;
+    const g = el("g",{"pointer-events":"none",
+      stroke:"#ffd23f", "stroke-width":Math.max(u*0.25, hr2*0.1),
+      "stroke-linecap":"round", "stroke-linejoin":"round", fill:"none"});
+    g.appendChild(el("line",{x1:hx-arm, y1:hy, x2:hx+arm, y2:hy}));
+    g.appendChild(el("line",{x1:hx, y1:hy-arm, x2:hx, y2:hy+arm}));
+    g.appendChild(el("polyline",{points:`${hx-arm+ah},${hy-ah} ${hx-arm},${hy} ${hx-arm+ah},${hy+ah}`}));
+    g.appendChild(el("polyline",{points:`${hx+arm-ah},${hy-ah} ${hx+arm},${hy} ${hx+arm-ah},${hy+ah}`}));
+    g.appendChild(el("polyline",{points:`${hx-ah},${hy-arm+ah} ${hx},${hy-arm} ${hx+ah},${hy-arm+ah}`}));
+    g.appendChild(el("polyline",{points:`${hx-ah},${hy+arm-ah} ${hx},${hy+arm} ${hx+ah},${hy+arm-ah}`}));
+    figureLayer.appendChild(g);
+  }
 }
 
 /* ================= Sidebar list ================= */
@@ -1180,22 +1218,23 @@ function renderComposite(){
 
   // holds
   state.holds.forEach(h=>{
+    const s = h.size || 1;
     ctx.save();
     ctx.strokeStyle = h.color;
-    ctx.lineWidth = u*0.5;
-    if(state.selectedHold!==h.id) ctx.setLineDash([u*1.2, u*0.7]);
-    ctx.beginPath(); ctx.arc(h.x, h.y, u*1.9, 0, Math.PI*2); ctx.stroke();
+    ctx.lineWidth = u*0.5*s;
+    if(state.selectedHold!==h.id) ctx.setLineDash([u*1.2*s, u*0.7*s]);
+    ctx.beginPath(); ctx.arc(h.x, h.y, u*1.9*s, 0, Math.PI*2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = h.color;
-    ctx.beginPath(); ctx.arc(h.x, h.y, u*0.45, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(h.x, h.y, u*0.45*s, 0, Math.PI*2); ctx.fill();
     if(h.name){
-      ctx.font = `600 ${u*2.1}px 'IBM Plex Mono', monospace`;
+      ctx.font = `600 ${u*2.1*s}px 'IBM Plex Mono', monospace`;
       ctx.textBaseline = "alphabetic";
-      ctx.lineWidth = u*0.55;
+      ctx.lineWidth = u*0.55*s;
       ctx.strokeStyle = "rgba(0,0,0,.85)";
       ctx.lineJoin = "round";
-      ctx.strokeText(h.name, h.x + u*2.5, h.y - u*1.6);
-      ctx.fillText(h.name, h.x + u*2.5, h.y - u*1.6);
+      ctx.strokeText(h.name, h.x + u*2.5*s, h.y - u*1.6*s);
+      ctx.fillText(h.name, h.x + u*2.5*s, h.y - u*1.6*s);
     }
     ctx.restore();
   });
