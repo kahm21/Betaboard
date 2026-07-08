@@ -439,7 +439,7 @@
     </div>
     <div class="side-section">
       <label for="figScale">Climber size</label>
-      <input type="range" id="figScale" min="0.4" max="2.5" step="0.05" value="1">
+      <input type="range" id="figScale" min="0.1" max="1.9" step="0.05" value="1">
       <div class="row" style="margin-top:10px">
         <button id="resetPose">Reset pose</button>
         <button id="clearAll">Clear all</button>
@@ -1060,7 +1060,8 @@ function renderFigureSVG(){
   if(!state.figureVisible || !state.joints) return;
   const u = unit();
   const J = state.joints;
-  const stroke = u*0.9;
+  const f = state.figScale;              // all figure line weights scale with size
+  const stroke = u*0.9*f;
   // bones with dark outline for visibility on any photo
   BONES.forEach(([a,b])=>{
     figureLayer.appendChild(el("line",{x1:J[a].x,y1:J[a].y,x2:J[b].x,y2:J[b].y,
@@ -1071,39 +1072,39 @@ function renderFigureSVG(){
       stroke:"#ffd23f","stroke-width":stroke,"stroke-linecap":"round"}));
   });
   // head
-  const headR = u*1.7;
+  const headR = u*1.7*f;
   figureLayer.appendChild(el("circle",{cx:J.head.x,cy:J.head.y,r:headR,
-    fill:"#ffd23f",stroke:"rgba(0,0,0,.75)","stroke-width":u*0.4}));
+    fill:"#ffd23f",stroke:"rgba(0,0,0,.75)","stroke-width":u*0.4*f}));
   // anchor rings on pinned hands/feet
   for(const k in LIMBS){
     const hold = anchorHold(k);
     if(!hold) continue;
-    figureLayer.appendChild(el("circle",{cx:J[k].x,cy:J[k].y,r:u*1.55,
-      fill:"none",stroke:hold.color,"stroke-width":u*0.38,
+    figureLayer.appendChild(el("circle",{cx:J[k].x,cy:J[k].y,r:u*1.55*f,
+      fill:"none",stroke:hold.color,"stroke-width":u*0.38*f,
       "pointer-events":"none"}));
   }
   // joints: visuals (non-interactive) + enlarged transparent hit circles
   for(const k in J){
-    const isHip = k==="hip", isHead = k==="head";
+    const isHead = k==="head";
     const anch = LIMBS[k] ? anchorHold(k) : null;
-    const r = isHip ? u*1.3 : (isHead ? headR : u*0.95);
+    const r = isHead ? headR : u*0.95*f;
     figureLayer.appendChild(el("circle",{cx:J[k].x,cy:J[k].y,r:r,
-      fill: anch ? anch.color : (isHip ? "#ffffff" : (isHead ? "transparent" : "#1d2129")),
-      stroke: anch ? "#1d2129" : (isHip ? "#1d2129" : (isHead ? "transparent" : "#ffd23f")),
-      "stroke-width":u*0.35,
+      fill: anch ? anch.color : (isHead ? "transparent" : "#1d2129"),
+      stroke: anch ? "#1d2129" : (isHead ? "transparent" : "#ffd23f"),
+      "stroke-width":u*0.35*f,
       "pointer-events":"none"}));
   }
-  const hitR = Math.max(u*1.7, minHitImg(HIT_CSS));
+  const hitR = Math.max(u*1.7*f, minHitImg(HIT_CSS));
   // torso = whole-climber handle: subtle grip dot + wide invisible hit line.
   // rendered BEFORE the joint hit circles so hip/neck grabs still win at the ends.
   {
     const mx = (J.hip.x+J.neck.x)/2, my = (J.hip.y+J.neck.y)/2;
-    figureLayer.appendChild(el("circle",{cx:mx, cy:my, r:u*0.55,
-      fill:"#1d2129", stroke:"#ffd23f", "stroke-width":u*0.28,
+    figureLayer.appendChild(el("circle",{cx:mx, cy:my, r:u*0.55*f,
+      fill:"#1d2129", stroke:"#ffd23f", "stroke-width":u*0.28*f,
       "pointer-events":"none"}));
     const grip = el("line",{x1:J.hip.x, y1:J.hip.y, x2:J.neck.x, y2:J.neck.y,
       stroke:"transparent",
-      "stroke-width":Math.max(u*2.6, minHitImg(HIT_CSS+4)),
+      "stroke-width":Math.max(u*2.6*f, minHitImg(HIT_CSS+4)),
       "stroke-linecap":"round", class:"joint"});
     grip.dataset.figureMove = "1";
     const gt = el("title",{});
@@ -1112,8 +1113,8 @@ function renderFigureSVG(){
     figureLayer.appendChild(grip);
   }
   for(const k in J){
-    const isHip = k==="hip", isHead = k==="head";
-    const hr = isHead ? Math.max(headR, hitR) : (isHip ? Math.max(u*1.6, hitR) : hitR);
+    const isHead = k==="head";
+    const hr = isHead ? Math.max(headR, hitR) : hitR;
     const c = el("circle",{class:"joint",cx:J[k].x,cy:J[k].y,r:hr,fill:"transparent"});
     c.dataset.joint = k;
     if(k==="hip"){
@@ -1241,7 +1242,7 @@ function renderComposite(){
 
   // figure
   if(state.figureVisible && state.joints){
-    const J = state.joints, stroke = u*0.9;
+    const J = state.joints, f = state.figScale, stroke = u*0.9*f;
     ctx.lineCap = "round";
     ctx.strokeStyle = "rgba(0,0,0,.75)";
     ctx.lineWidth = stroke*1.8;
@@ -1251,8 +1252,8 @@ function renderComposite(){
     BONES.forEach(([a,b])=>{ ctx.beginPath(); ctx.moveTo(J[a].x,J[a].y); ctx.lineTo(J[b].x,J[b].y); ctx.stroke(); });
     ctx.fillStyle = "#ffd23f";
     ctx.strokeStyle = "rgba(0,0,0,.75)";
-    ctx.lineWidth = u*0.4;
-    ctx.beginPath(); ctx.arc(J.head.x, J.head.y, u*1.7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = u*0.4*f;
+    ctx.beginPath(); ctx.arc(J.head.x, J.head.y, u*1.7*f, 0, Math.PI*2); ctx.fill(); ctx.stroke();
   }
 
   // if zoomed in, crop the snapshot to exactly what's visible on screen
