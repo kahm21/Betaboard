@@ -144,6 +144,13 @@
   #dropzone .up{
     font-size:2.4rem;display:block;margin-bottom:14px;color:var(--tape);
   }
+  .alt-open{margin-top:14px!important}
+  .linklike{
+    background:none;border:none;padding:0;
+    color:var(--tape);text-decoration:underline;
+    font-size:inherit;font-family:inherit;cursor:pointer;
+  }
+  .linklike:hover{color:#ffdc63;background:none}
 
   /* ---------- Sidebar ---------- */
   aside{
@@ -411,6 +418,7 @@
       <h2>Chalk up.</h2>
       <p>Drop a photo of the wall here, or click to choose one.<br>
       Then mark the holds, pose the climber, and save your beta.</p>
+      <p class="alt-open">…or <button id="openProject2" class="linklike">open a saved project</button></p>
     </div>
 
     <div id="stage">
@@ -444,6 +452,10 @@
         <button id="resetPose">Reset pose</button>
         <button id="clearAll">Clear all</button>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button id="saveProject" title="Save everything — photo, holds, climber, timeline — as a project file">💾 Save project</button>
+        <button id="openProject" title="Open a saved project file">📂 Open</button>
+      </div>
       <p class="anchor-hint">Moving the climber: drag the ✛ badge beside the figure (or the torso line) to move the whole body. The hip joint shifts just the hips. Anchoring: drag a hand or foot onto a hold to pin it there — pinned limbs stay on their holds while the body moves. Tap a pinned limb, or drag it off, to release.</p>
       <p class="anchor-hint">Zoom: scroll or pinch on the photo to zoom; in Move mode drag empty background to pan. Snapshots capture the zoomed view, so zoom in to feature a specific move.</p>
     </div>
@@ -461,6 +473,7 @@
 </footer>
 
 <input type="file" id="fileInput" accept="image/*" hidden>
+<input type="file" id="projInput" accept=".json,application/json" hidden>
 <div id="colorPop" role="menu"></div>
 <div id="toast"></div>
 
@@ -678,7 +691,9 @@ fileInput.addEventListener("change", e=>loadImage(e.target.files[0]));
 }));
 document.addEventListener("drop", e=>{
   const f = e.dataTransfer?.files?.[0];
-  if(f) loadImage(f);
+  if(!f) return;
+  if(f.name.toLowerCase().endsWith(".json") || f.type === "application/json") importProject(f);
+  else loadImage(f);
 });
 
 /* ================= Modes ================= */
@@ -1517,6 +1532,124 @@ $("exportTimeline").addEventListener("click", async ()=>{
   }finally{
     btn.disabled = false; btn.textContent = "⬇ Export timeline";
   }
+});
+
+/* ================= Project files (save / open) ================= */
+const PROJECT_APP = "beta-board", PROJECT_VERSION = 1;
+const projInput = $("projInput");
+
+function reencodeDataURL(durl, quality){
+  return new Promise((res, rej)=>{
+    const im = new Image();
+    im.onload = ()=>{
+      const c = document.createElement("canvas");
+      c.width = im.width; c.height = im.height;
+      const x = c.getContext("2d");
+      x.fillStyle = "#000"; x.fillRect(0,0,c.width,c.height);
+      x.drawImage(im, 0, 0);
+      res(c.toDataURL("image/jpeg", quality));
+    };
+    im.onerror = rej;
+    im.src = durl;
+  });
+}
+
+async function buildProject(){
+  // wall photo, re-encoded as JPEG to keep the file portable and small
+  const c = document.createElement("canvas");
+  c.width = state.imgW; c.height = state.imgH;
+  c.getContext("2d").drawImage(wallImg, 0, 0);
+  const image = c.toDataURL("image/jpeg", 0.92);
+  // frames, re-encoded too (full-res PNGs would balloon the file)
+  const frms = await Promise.all(frames.map(async f=>({
+    id: f.id, note: f.note, snap: f.snap,
+    image: await reencodeDataURL(f.dataURL, 0.85)
+  })));
+  return {
+    app: PROJECT_APP, version: PROJECT_VERSION,
+    savedAt: new Date().toISOString(),
+    image,
+    state: {
+      holds: state.holds, nextId: state.nextId,
+      joints: state.joints, figureVisible: state.figureVisible,
+      figScale: state.figScale, anchors: state.anchors, limbLens: state.limbLens
+    },
+    frames: frms, nextFrameId
+  };
+}
+
+$("saveProject").addEventListener("click", async ()=>{
+  if(!state.imgW){ showToast("Upload a wall photo first."); return; }
+  const btn = $("saveProject");
+  btn.disabled = true;
+  try{
+    const proj = await buildProject();
+    const blob = new Blob([JSON.stringify(proj)], {type:"application/json"});
+    const d = new Date();
+    const fname = `beta-project-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}.json`;
+    const saved = await saveImage(blob, fname);
+    if(saved) showToast("Project saved.");
+  }catch(err){
+    showToast("Couldn't save the project — try again.");
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+function applyProject(data){
+  if(!data || data.app !== PROJECT_APP || !data.image)
+    throw new Error("not a Beta Board project");
+  wallImg.onload = ()=>{
+    state.imgW = wallImg.naturalWidth;
+    state.imgH = wallImg.naturalHeight;
+    overlay.setAttribute("viewBox", `0 0 ${state.imgW} ${state.imgH}`);
+    dropzone.style.display = "none";
+    stage.style.display = "block";
+    resetView();
+    const s = data.state || {};
+    state.holds = s.holds || [];
+    state.nextId = s.nextId || state.holds.reduce((m,h)=>Math.max(m,h.id),0)+1;
+    state.joints = s.joints || null;
+    state.figureVisible = !!s.figureVisible;
+    $("toggleFigure").classList.toggle("active", state.figureVisible);
+    state.figScale = s.figScale || 1;
+    $("figScale").value = state.figScale;
+    state.anchors = s.anchors || {lHand:null, rHand:null, lFoot:null, rFoot:null};
+    state.limbLens = s.limbLens || {};
+    state.selectedHold = null;
+    if(!state.joints) initFigure();
+    else if(!s.limbLens) computeAllLens();
+    frames.length = 0;
+    (data.frames || []).forEach(f=>frames.push({
+      id: f.id, dataURL: f.image, note: f.note || "", snap: f.snap
+    }));
+    nextFrameId = data.nextFrameId || frames.reduce((m,f)=>Math.max(m,f.id),0)+1;
+    renderTimeline();
+    renderAll();
+    showToast("Project loaded.");
+  };
+  wallImg.onerror = ()=>showToast("Couldn't load the project's photo.");
+  wallImg.src = data.image;
+}
+
+async function importProject(file){
+  try{
+    const data = JSON.parse(await file.text());
+    applyProject(data);
+  }catch(err){
+    showToast("That file isn't a Beta Board project.");
+  }
+}
+
+$("openProject").addEventListener("click", ()=>projInput.click());
+$("openProject2").addEventListener("click", e=>{
+  e.stopPropagation();          // don't trigger the dropzone's photo picker
+  projInput.click();
+});
+projInput.addEventListener("change", e=>{
+  const f = e.target.files[0];
+  if(f) importProject(f);
+  projInput.value = "";
 });
 
 /* ================= Mobile UI: drawer & timeline collapse ================= */
