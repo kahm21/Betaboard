@@ -444,7 +444,7 @@
         <button id="resetPose">Reset pose</button>
         <button id="clearAll">Clear all</button>
       </div>
-      <p class="anchor-hint">Anchoring: drag a hand or foot onto a hold to pin it there. Pinned limbs stay on their holds while you move the body. Tap a pinned limb — or drag it off — to release.</p>
+      <p class="anchor-hint">Moving the climber: drag the torso line to move the whole body. The hip joint shifts just the hips. Anchoring: drag a hand or foot onto a hold to pin it there — pinned limbs stay on their holds while the body moves. Tap a pinned limb, or drag it off, to release.</p>
       <p class="anchor-hint">Zoom: scroll or pinch on the photo to zoom; in Move mode drag empty background to pan. Snapshots capture the zoomed view, so zoom in to feature a specific move.</p>
     </div>
   </aside>
@@ -541,6 +541,7 @@ stage.addEventListener("pointerdown", e=>{
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
   if(pointers.size === 2){
     drag = null;                       // cancel any single-pointer drag
+    pendingHold = null;                // a pinch is never a hold tap
     const [a,b] = [...pointers.values()];
     const r = stage.getBoundingClientRect();
     pinch = {
@@ -627,9 +628,23 @@ function showToast(msg){
   showToast._t = setTimeout(()=>toast.classList.remove("show"), 1800);
 }
 function svgPoint(evt){
-  const pt = overlay.createSVGPoint();
-  pt.x = evt.clientX; pt.y = evt.clientY;
-  return pt.matrixTransform(overlay.getScreenCTM().inverse());
+  // map client coords -> image px via the zoom wrapper's on-screen rect.
+  // (getBoundingClientRect includes the CSS zoom transform on every browser,
+  // unlike getScreenCTM, which some mobile engines compute without it)
+  const r = zoomWrap.getBoundingClientRect();
+  return {
+    x: (evt.clientX - r.left) / r.width  * state.imgW,
+    y: (evt.clientY - r.top)  / r.height * state.imgH
+  };
+}
+function imageToStage(x, y){
+  // image px -> CSS coords relative to the stage (for positioning popups)
+  const r = zoomWrap.getBoundingClientRect();
+  const s = stage.getBoundingClientRect();
+  return {
+    x: r.left + (x/state.imgW)*r.width  - s.left,
+    y: r.top  + (y/state.imgH)*r.height - s.top
+  };
 }
 const clamp = (v,min,max)=>Math.min(max,Math.max(min,v));
 
@@ -677,10 +692,21 @@ $("modeHold").addEventListener("click", ()=>setMode("hold"));
 $("modeMove").addEventListener("click", ()=>setMode("move"));
 
 /* ================= Holds ================= */
+/* Marking is a TAP gesture: the hold is placed on pointerup, and any
+   movement or a second finger (pan/pinch) cancels it. */
+let pendingHold = null;
 overlay.addEventListener("pointerdown", e=>{
   if(state.mode!=="hold") return;
   if(e.target !== overlay) return;            // clicked empty space, not a marker/joint
+  pendingHold = {id:e.pointerId, sx:e.clientX, sy:e.clientY};
+});
+overlay.addEventListener("pointerup", e=>{
+  if(!pendingHold || pendingHold.id!==e.pointerId) return;
+  const moved = Math.hypot(e.clientX-pendingHold.sx, e.clientY-pendingHold.sy) > 8;
+  pendingHold = null;
+  if(moved) return;                           // it was a pan, not a tap
   const p = svgPoint(e);
+  if(p.x < 0 || p.y < 0 || p.x > state.imgW || p.y > state.imgH) return;
   const hold = {
     id: state.nextId++,
     x: clamp(p.x, 0, state.imgW),
@@ -695,14 +721,11 @@ overlay.addEventListener("pointerdown", e=>{
 });
 
 function openNamePopup(hold){
-  // position the popup over the marker (convert image coords -> screen)
-  const ctm = overlay.getScreenCTM();
-  const pt = overlay.createSVGPoint();
-  pt.x = hold.x; pt.y = hold.y;
-  const sp = pt.matrixTransform(ctm);
+  // position the popup over the marker (convert image coords -> stage coords)
+  const sp = imageToStage(hold.x, hold.y);
   const stageRect = stage.getBoundingClientRect();
-  namePop.style.left = clamp(sp.x - stageRect.x + 14, 4, stageRect.width-160) + "px";
-  namePop.style.top  = clamp(sp.y - stageRect.y - 14, 4, stageRect.height-40) + "px";
+  namePop.style.left = clamp(sp.x + 14, 4, stageRect.width-160) + "px";
+  namePop.style.top  = clamp(sp.y - 14, 4, stageRect.height-40) + "px";
   namePop.style.display = "block";
   nameInput.value = hold.name;
   nameInput.dataset.holdId = hold.id;
@@ -911,21 +934,29 @@ overlay.addEventListener("pointerdown", e=>{
     drag = {type:"hold", hold:h, dx:h.x-p.x, dy:h.y-p.y};
     overlay.setPointerCapture(e.pointerId);
     renderAll();
+  } else if(t.dataset.figureMove){
+    // torso grab: move the whole climber
+    const p = svgPoint(e);
+    const offsets = {};
+    for(const k in state.joints) offsets[k] = {dx:state.joints[k].x-p.x, dy:state.joints[k].y-p.y};
+    drag = {type:"figure", offsets};
+    overlay.setPointerCapture(e.pointerId);
   } else if(t.dataset.joint){
     const p = svgPoint(e);
-    if(t.dataset.joint==="hip"){
-      // dragging the hip moves the whole climber
-      const offsets = {};
-      for(const k in state.joints) offsets[k] = {dx:state.joints[k].x-p.x, dy:state.joints[k].y-p.y};
-      drag = {type:"figure", offsets};
-    } else {
-      const j = state.joints[t.dataset.joint];
-      drag = {type:"joint", key:t.dataset.joint, dx:j.x-p.x, dy:j.y-p.y,
-              sx:e.clientX, sy:e.clientY, moved:false};
+    // resolve to the joint actually NEAREST the finger — overlapping fat
+    // touch targets otherwise steal grabs from the joint the user wants
+    let key = t.dataset.joint, best = Infinity;
+    for(const k in state.joints){
+      const d = Math.hypot(state.joints[k].x-p.x, state.joints[k].y-p.y);
+      if(d < best){ best = d; key = k; }
     }
+    const j = state.joints[key];
+    drag = {type:"joint", key:key, dx:j.x-p.x, dy:j.y-p.y,
+            sx:e.clientX, sy:e.clientY, moved:false};
     overlay.setPointerCapture(e.pointerId);
-  } else if(t === overlay && state.mode==="move" && view.scale > 1){
-    // drag empty background to pan while zoomed
+  } else if(t === overlay && view.scale > 1){
+    // drag empty background to pan while zoomed (works in both modes;
+    // in Mark mode a motionless tap still places a hold on release)
     drag = {type:"pan", sx:e.clientX, sy:e.clientY, tx0:view.tx, ty0:view.ty};
     overlay.setPointerCapture(e.pointerId);
   }
@@ -952,11 +983,13 @@ overlay.addEventListener("pointermove", e=>{
     if(LIMBS[drag.key]){
       // hand/foot: magnetic attach/detach against nearby holds
       if(drag.moved) endEffectorSnap(drag.key);
-    } else if(drag.key==="neck"){
-      // torso moved: anchored arms stay on their holds
-      solveLimbIK("lHand"); solveLimbIK("rHand");
-      if(state.anchors.lHand==null) computeLen("lHand");
-      if(state.anchors.rHand==null) computeLen("rHand");
+    } else if(drag.key==="neck" || drag.key==="hip"){
+      // torso end moved: anchored limbs on that end stay on their holds
+      const ends = drag.key==="neck" ? ["lHand","rHand"] : ["lFoot","rFoot"];
+      ends.forEach(k=>{
+        solveLimbIK(k);
+        if(state.anchors[k]==null) computeLen(k);
+      });
     } else if(MID_TO_LIMB[drag.key]){
       // elbow/knee posed manually: remember the new bend as natural length
       computeLen(MID_TO_LIMB[drag.key]);
@@ -1059,11 +1092,33 @@ function renderFigureSVG(){
       "pointer-events":"none"}));
   }
   const hitR = Math.max(u*1.7, minHitImg(HIT_CSS));
+  // torso = whole-climber handle: subtle grip dot + wide invisible hit line.
+  // rendered BEFORE the joint hit circles so hip/neck grabs still win at the ends.
+  {
+    const mx = (J.hip.x+J.neck.x)/2, my = (J.hip.y+J.neck.y)/2;
+    figureLayer.appendChild(el("circle",{cx:mx, cy:my, r:u*0.55,
+      fill:"#1d2129", stroke:"#ffd23f", "stroke-width":u*0.28,
+      "pointer-events":"none"}));
+    const grip = el("line",{x1:J.hip.x, y1:J.hip.y, x2:J.neck.x, y2:J.neck.y,
+      stroke:"transparent",
+      "stroke-width":Math.max(u*2.6, minHitImg(HIT_CSS+4)),
+      "stroke-linecap":"round", class:"joint"});
+    grip.dataset.figureMove = "1";
+    const gt = el("title",{});
+    gt.textContent = "Drag the torso to move the whole climber";
+    grip.appendChild(gt);
+    figureLayer.appendChild(grip);
+  }
   for(const k in J){
     const isHip = k==="hip", isHead = k==="head";
     const hr = isHead ? Math.max(headR, hitR) : (isHip ? Math.max(u*1.6, hitR) : hitR);
     const c = el("circle",{class:"joint",cx:J[k].x,cy:J[k].y,r:hr,fill:"transparent"});
     c.dataset.joint = k;
+    if(k==="hip"){
+      const ht = el("title",{});
+      ht.textContent = "Hip — drag to shift the hips (anchored feet stay put)";
+      c.appendChild(ht);
+    }
     if(LIMBS[k]){
       const anch = anchorHold(k);
       const t = el("title",{});
