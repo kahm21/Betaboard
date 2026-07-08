@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#14161b">
+<title>Beta Board — Climbing Beta Annotator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14161b;
+    --panel:#1d2129;
+    --panel-2:#242935;
+    --line:#323947;
+    --chalk:#ece7db;
+    --chalk-dim:#9aa0ac;
+    --tape:#ffd23f;        /* route-tape yellow: the app accent */
+    --tape-ink:#1a1503;
+    --hold-red:#ff5d5d;
+    --hold-blue:#4fc3f7;
+    --hold-green:#7ed957;
+    --hold-purple:#c792ea;
+    --hold-orange:#ff9f43;
+    --figure:#ffd23f;
+    --radius:10px;
+    font-size:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;overscroll-behavior:none}
+  body{
+    margin:0;
+    height:100dvh;
+    background:var(--bg);
+    color:var(--chalk);
+    font-family:"IBM Plex Mono",ui-monospace,monospace;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    touch-action:manipulation;
+  }
+
+  /* ---------- Top bar ---------- */
+  header{
+    display:flex;align-items:center;gap:14px;
+    padding:10px 16px;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+  }
+  .brand{
+    font-family:"Big Shoulders Display",sans-serif;
+    font-weight:800;font-size:1.5rem;letter-spacing:.04em;
+    text-transform:uppercase;
+    display:flex;align-items:center;gap:.5em;
+    margin-right:6px;
+  }
+  .brand .dot{
+    width:.85em;height:.85em;border-radius:50%;
+    background:var(--tape);
+    box-shadow:0 0 0 3px rgba(255,210,63,.18);
+  }
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{
+    font-family:inherit;font-size:.8rem;
+    background:var(--panel-2);
+    color:var(--chalk);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:8px 13px;
+    cursor:pointer;
+    transition:background .12s,border-color .12s,color .12s;
+    display:inline-flex;align-items:center;gap:7px;
+    line-height:1;
+  }
+  button:hover{background:#2b3140}
+  button:focus-visible{outline:2px solid var(--tape);outline-offset:2px}
+  button.primary{
+    background:var(--tape);color:var(--tape-ink);
+    border-color:var(--tape);font-weight:600;
+  }
+  button.primary:hover{background:#ffdc63}
+  button.active{
+    border-color:var(--tape);color:var(--tape);
+    background:rgba(255,210,63,.09);
+  }
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .sep{width:1px;align-self:stretch;background:var(--line);margin:0 3px}
+  .kbd-hint{color:var(--chalk-dim);font-size:.68rem;margin-left:auto}
+  @media (max-width:800px){.kbd-hint{display:none}}
+
+  /* ---------- Layout ---------- */
+  main{flex:1;display:flex;min-height:0}
+  #stageWrap{
+    flex:1;position:relative;
+    display:flex;align-items:center;justify-content:center;
+    padding:18px;min-width:0;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255,210,63,.03), transparent 55%),
+      var(--bg);
+  }
+  #stage{
+    position:relative;
+    max-width:100%;max-height:100%;
+    display:none;
+    box-shadow:0 12px 44px rgba(0,0,0,.55);
+    border-radius:6px;overflow:hidden;
+    background:#000;
+  }
+  #wallImg{display:block;max-width:100%;max-height:calc(100dvh - 130px);user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}
+  #zoomWrap{
+    position:relative;
+    transform-origin:0 0;
+    line-height:0;
+  }
+  #overlay{
+    position:absolute;inset:0;width:100%;height:100%;
+    touch-action:none;
+    user-select:none;-webkit-user-select:none;
+  }
+  #overlay text{
+    user-select:none;-webkit-user-select:none;
+    pointer-events:none;
+  }
+  #overlay.mode-hold{cursor:crosshair}
+
+  /* ---------- Empty state / dropzone ---------- */
+  #dropzone{
+    border:2px dashed var(--line);
+    border-radius:16px;
+    padding:56px 44px;
+    text-align:center;
+    max-width:460px;
+    cursor:pointer;
+    transition:border-color .15s,background .15s;
+  }
+  #dropzone:hover,#dropzone.dragover{border-color:var(--tape);background:rgba(255,210,63,.04)}
+  #dropzone h2{
+    font-family:"Big Shoulders Display",sans-serif;
+    font-size:2rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.03em;margin:0 0 10px;
+  }
+  #dropzone p{color:var(--chalk-dim);font-size:.82rem;line-height:1.6;margin:0}
+  #dropzone .up{
+    font-size:2.4rem;display:block;margin-bottom:14px;color:var(--tape);
+  }
+
+  /* ---------- Sidebar ---------- */
+  aside{
+    width:270px;flex-shrink:0;
+    background:var(--panel);
+    border-left:1px solid var(--line);
+    display:flex;flex-direction:column;
+    min-height:0;
+  }
+  aside h3{
+    font-family:"Big Shoulders Display",sans-serif;
+    font-size:1.05rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;
+    margin:0;padding:14px 16px 10px;
+    display:flex;align-items:center;gap:8px;
+  }
+  aside h3 .count{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:.68rem;color:var(--tape-ink);
+    background:var(--tape);border-radius:20px;
+    padding:2px 8px;font-weight:600;
+  }
+  #holdList{
+    flex:1;overflow-y:auto;
+    padding:0 12px 12px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .hold-item{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:8px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .hold-item.selected{border-color:var(--tape)}
+  .hold-item input[type=text]{
+    flex:1;min-width:0;
+    background:transparent;border:none;
+    color:var(--chalk);font-family:inherit;font-size:.78rem;
+    border-bottom:1px solid transparent;
+    padding:3px 1px;
+  }
+  .hold-item input[type=text]:focus{outline:none;border-bottom-color:var(--tape)}
+  .swatch{
+    width:18px;height:18px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.25);
+    cursor:pointer;flex-shrink:0;padding:0;background:none;
+  }
+  .del{
+    background:none;border:none;color:var(--chalk-dim);
+    font-size:.95rem;padding:2px 5px;border-radius:6px;
+  }
+  .del:hover{color:var(--hold-red);background:rgba(255,93,93,.1)}
+  .empty-note{color:var(--chalk-dim);font-size:.72rem;line-height:1.6;padding:4px 6px}
+
+  .side-section{border-top:1px solid var(--line);padding:12px 16px 16px}
+  .side-section label{font-size:.72rem;color:var(--chalk-dim);display:block;margin-bottom:8px}
+  .anchor-hint{color:var(--chalk-dim);font-size:.66rem;line-height:1.55;margin:12px 0 0}
+  input[type=range]{width:100%;accent-color:var(--tape)}
+  .row{display:flex;gap:8px}
+  .row button{flex:1;justify-content:center}
+
+  /* color picker popover */
+  #colorPop{
+    position:fixed;z-index:50;display:none;
+    background:var(--panel-2);border:1px solid var(--line);
+    border-radius:10px;padding:8px;gap:6px;
+  }
+  #colorPop.open{display:flex}
+  #colorPop button{width:24px;height:24px;border-radius:50%;padding:0;border:2px solid rgba(255,255,255,.2)}
+
+  /* zoom controls */
+  #zoomCtrl{
+    position:absolute;right:10px;bottom:10px;z-index:45;
+    display:flex;align-items:center;gap:5px;
+    background:rgba(20,22,27,.82);
+    border:1px solid var(--line);
+    border-radius:10px;padding:5px;
+    backdrop-filter:blur(4px);
+  }
+  #zoomCtrl button{
+    width:30px;height:30px;padding:0;justify-content:center;
+    font-size:.95rem;border-radius:7px;
+  }
+  #zoomPct{
+    font-size:.62rem;color:var(--chalk-dim);
+    min-width:38px;text-align:center;user-select:none;
+  }
+
+  /* hold name popup on canvas */
+  #namePop{
+    position:absolute;z-index:40;display:none;
+    background:var(--panel-2);border:1px solid var(--tape);
+    border-radius:8px;padding:6px;
+    box-shadow:0 6px 20px rgba(0,0,0,.5);
+  }
+  #namePop input{
+    background:transparent;border:none;color:var(--chalk);
+    font-family:inherit;font-size:.8rem;width:130px;
+  }
+  #namePop input:focus{outline:none}
+
+  /* SVG element styles */
+  .hold-marker{cursor:grab}
+  .hold-marker:active{cursor:grabbing}
+  .joint{cursor:grab}
+  .joint:active{cursor:grabbing}
+
+  /* toast */
+  #toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:var(--tape);color:var(--tape-ink);
+    font-size:.78rem;font-weight:600;
+    padding:10px 18px;border-radius:30px;
+    transition:transform .25s ease;pointer-events:none;z-index:60;
+  }
+  #toast.show{transform:translateX(-50%) translateY(0)}
+
+  /* ---------- Timeline ---------- */
+  #timelineBar{
+    background:var(--panel);
+    border-top:1px solid var(--line);
+    padding:10px 16px 12px;
+    flex-shrink:0;
+  }
+  .tl-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px}
+  .tl-head h3{
+    font-family:"Big Shoulders Display",sans-serif;
+    font-size:1.05rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;margin:0;
+    display:flex;align-items:center;gap:8px;
+  }
+  .tl-head h3 .count{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:.68rem;color:var(--tape-ink);
+    background:var(--tape);border-radius:20px;
+    padding:2px 8px;font-weight:600;
+  }
+  .tl-hint{color:var(--chalk-dim);font-size:.68rem;margin-right:auto;margin-left:6px}
+  @media (max-width:800px){.tl-hint{display:none}}
+  #timelineTrack{
+    display:flex;align-items:center;gap:10px;
+    overflow-x:auto;padding-bottom:6px;
+  }
+  .frame{
+    position:relative;flex-shrink:0;
+    border:1px solid var(--line);border-radius:8px;
+    overflow:hidden;cursor:pointer;background:#000;
+    transition:border-color .12s;
+  }
+  .frame:hover{border-color:var(--tape)}
+  .frame:focus-visible{outline:2px solid var(--tape);outline-offset:2px}
+  .frame img{display:block;height:112px;pointer-events:none}
+  .frame .num{
+    position:absolute;top:4px;left:4px;
+    background:var(--tape);color:var(--tape-ink);
+    font-size:.62rem;font-weight:600;
+    padding:1px 7px;border-radius:10px;
+  }
+  .frame .frame-actions{
+    position:absolute;top:4px;right:4px;
+    display:flex;gap:4px;opacity:0;transition:opacity .12s;
+  }
+  .frame:hover .frame-actions,.frame:focus-within .frame-actions{opacity:1}
+  .frame-actions button{
+    padding:3px 7px;font-size:.68rem;border-radius:6px;
+    background:rgba(0,0,0,.68);border-color:transparent;
+  }
+  .frame-actions button:hover{background:rgba(0,0,0,.9)}
+  .tl-arrow{
+    flex-shrink:0;display:flex;flex-direction:column;
+    align-items:center;gap:3px;width:158px;
+  }
+  .tl-arrow .shaft{color:var(--tape);font-size:1.15rem;line-height:1;user-select:none}
+  .tl-arrow textarea{
+    width:100%;height:56px;resize:none;
+    background:var(--panel-2);border:1px solid var(--line);
+    border-radius:8px;color:var(--chalk);
+    font-family:inherit;font-size:.68rem;line-height:1.45;
+    padding:5px 8px;
+  }
+  .tl-arrow textarea:focus{outline:none;border-color:var(--tape)}
+  .tl-arrow textarea::placeholder{color:var(--chalk-dim)}
+  body.has-timeline #wallImg{max-height:calc(100dvh - 330px)}
+  body.has-timeline.tl-collapsed #wallImg{max-height:calc(100dvh - 200px)}
+  body.tl-collapsed #timelineTrack{display:none}
+  #tlToggle{padding:5px 10px;font-size:.75rem}
+
+  /* touch devices: no hover, so frame actions are always visible */
+  @media (hover:none){
+    .frame .frame-actions{opacity:1}
+  }
+
+  /* mobile drawer handle + panel button (hidden on desktop) */
+  #drawerHandle{
+    display:none;
+    padding:10px 0 6px;
+    justify-content:center;
+    cursor:pointer;
+  }
+  #drawerHandle span{
+    width:44px;height:5px;border-radius:3px;
+    background:var(--line);
+  }
+  #panelBtn{display:none}
+
+  @media (max-width:760px){
+    header{padding:8px 10px;gap:8px}
+    .brand{font-size:1.15rem;margin-right:0}
+    .toolbar{gap:6px}
+    button{padding:10px 12px}
+    .btn-label{display:none}
+    .sep{display:none}
+    #panelBtn{display:inline-flex}
+    main{flex-direction:column}
+    #stageWrap{padding:8px}
+    aside{
+      position:fixed;left:0;right:0;bottom:0;top:auto;
+      width:100%;max-height:72dvh;
+      transform:translateY(105%);
+      transition:transform .28s ease;
+      z-index:70;
+      border-left:none;border-top:1px solid var(--line);
+      border-radius:16px 16px 0 0;
+      box-shadow:0 -14px 36px rgba(0,0,0,.6);
+      padding-bottom:env(safe-area-inset-bottom);
+    }
+    body.drawer-open aside{transform:translateY(0)}
+    #drawerHandle{display:flex}
+    #wallImg{max-height:calc(100dvh - 150px)}
+    body.has-timeline #wallImg{max-height:calc(100dvh - 340px)}
+    body.has-timeline.tl-collapsed #wallImg{max-height:calc(100dvh - 215px)}
+    .frame img{height:84px}
+    .tl-arrow{width:132px}
+    #zoomCtrl button{width:38px;height:38px}
+    #timelineBar{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="dot"></span>Beta Board</div>
+  <div class="toolbar">
+    <button id="uploadBtn" class="primary">⬆ <span class="btn-label">Wall photo</span></button>
+    <span class="sep"></span>
+    <button id="modeHold" title="Click the photo to mark a hold (Alt+H)">◎ <span class="btn-label">Mark holds</span></button>
+    <button id="modeMove" class="active" title="Drag holds and the climber (Alt+V)">✥ <span class="btn-label">Move</span></button>
+    <span class="sep"></span>
+    <button id="toggleFigure" title="Show or hide the climber (Alt+F)">☺ <span class="btn-label">Climber</span></button>
+    <span class="sep"></span>
+    <button id="snapshotBtn" title="Capture a frame to the timeline (Alt+S)">📷 <span class="btn-label">Snapshot</span></button>
+    <button id="panelBtn" title="Holds &amp; climber panel">☰</button>
+  </div>
+  <span class="kbd-hint">Alt+H mark · Alt+V move · Alt+F climber · Alt+S snapshot · scroll/pinch zooms · Del removes selected hold</span>
+</header>
+
+<main>
+  <div id="stageWrap">
+    <div id="dropzone" role="button" tabindex="0" aria-label="Upload a wall photo">
+      <span class="up">⬆</span>
+      <h2>Chalk up.</h2>
+      <p>Drop a photo of the wall here, or click to choose one.<br>
+      Then mark the holds, pose the climber, and save your beta.</p>
+    </div>
+
+    <div id="stage">
+      <div id="zoomWrap">
+        <img id="wallImg" alt="Climbing wall">
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg">
+          <g id="holdLayer"></g>
+          <g id="figureLayer"></g>
+        </svg>
+      </div>
+      <div id="namePop"><input id="nameInput" type="text" placeholder="Name this hold…" maxlength="40"></div>
+      <div id="zoomCtrl">
+        <button id="zoomIn" title="Zoom in">＋</button>
+        <button id="zoomOut" title="Zoom out">−</button>
+        <button id="zoomReset" title="Reset zoom">⤢</button>
+        <span id="zoomPct">100%</span>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div id="drawerHandle" role="button" aria-label="Close panel"><span></span></div>
+    <h3>Holds <span class="count" id="holdCount">0</span></h3>
+    <div id="holdList">
+      <div class="empty-note">No holds yet. Choose <b>Mark holds</b> and click the photo where each hold is.</div>
+    </div>
+    <div class="side-section">
+      <label for="figScale">Climber size</label>
+      <input type="range" id="figScale" min="0.4" max="2.5" step="0.05" value="1">
+      <div class="row" style="margin-top:10px">
+        <button id="resetPose">Reset pose</button>
+        <button id="clearAll">Clear all</button>
+      </div>
+      <p class="anchor-hint">Anchoring: drag a hand or foot onto a hold to pin it there. Pinned limbs stay on their holds while you move the body. Tap a pinned limb — or drag it off — to release.</p>
+      <p class="anchor-hint">Zoom: scroll or pinch on the photo to zoom; in Move mode drag empty background to pan. Snapshots capture the zoomed view, so zoom in to feature a specific move.</p>
+    </div>
+  </aside>
+</main>
+
+<footer id="timelineBar" hidden>
+  <div class="tl-head">
+    <h3>Timeline <span class="count" id="frameCount">0</span></h3>
+    <span class="tl-hint">Click a frame to restore its holds &amp; pose · write the move on each arrow</span>
+    <button id="tlToggle" title="Collapse or expand the timeline">▾</button>
+    <button id="exportTimeline" class="primary">⬇ <span class="btn-label">Export timeline</span></button>
+  </div>
+  <div id="timelineTrack"></div>
+</footer>
+
+<input type="file" id="fileInput" accept="image/*" hidden>
+<div id="colorPop" role="menu"></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ================= State ================= */
+const HOLD_COLORS = ["#ffd23f","#ff5d5d","#4fc3f7","#7ed957","#c792ea","#ff9f43","#ffffff"];
+const state = {
+  imgW: 0, imgH: 0,
+  holds: [],            // {id, x, y, name, color}  coords in image px
+  nextId: 1,
+  selectedHold: null,
+  mode: "move",         // "move" | "hold"
+  figureVisible: false,
+  figScale: 1,
+  joints: null,         // {head,neck,hip,lElbow,lHand,rElbow,rHand,lKnee,lFoot,rKnee,rFoot} image px
+  anchors: {lHand:null, rHand:null, lFoot:null, rFoot:null},  // limb -> hold id
+  limbLens: {}          // limb -> {L1, L2} natural bone lengths
+};
+
+/* ================= Elements ================= */
+const $ = id => document.getElementById(id);
+const fileInput=$("fileInput"), dropzone=$("dropzone"), stage=$("stage"),
+      wallImg=$("wallImg"), overlay=$("overlay"), zoomWrap=$("zoomWrap"),
+      holdLayer=$("holdLayer"), figureLayer=$("figureLayer"),
+      holdList=$("holdList"), holdCount=$("holdCount"),
+      namePop=$("namePop"), nameInput=$("nameInput"),
+      colorPop=$("colorPop"), toast=$("toast");
+
+/* ================= Zoom & pan ================= */
+const view = {scale:1, tx:0, ty:0};   // CSS px, transform-origin 0 0
+const MAX_ZOOM = 8;
+function applyView(){
+  zoomWrap.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+  $("zoomPct").textContent = Math.round(view.scale*100) + "%";
+  scheduleRender();   // hit-target sizes depend on zoom
+}
+function clampView(){
+  const w0 = zoomWrap.offsetWidth, h0 = zoomWrap.offsetHeight;
+  view.scale = clamp(view.scale, 1, MAX_ZOOM);
+  if(view.scale === 1){ view.tx = 0; view.ty = 0; return; }
+  view.tx = clamp(view.tx, w0 - w0*view.scale, 0);
+  view.ty = clamp(view.ty, h0 - h0*view.scale, 0);
+}
+function zoomAt(px, py, factor){   // px,py relative to stage top-left
+  const s0 = view.scale;
+  const s1 = clamp(s0*factor, 1, MAX_ZOOM);
+  if(s1 === s0) return;
+  view.tx = px - (px - view.tx)*(s1/s0);
+  view.ty = py - (py - view.ty)*(s1/s0);
+  view.scale = s1;
+  clampView(); applyView();
+}
+function resetView(){ view.scale = 1; view.tx = 0; view.ty = 0; applyView(); }
+
+stage.addEventListener("wheel", e=>{
+  if(!state.imgW) return;
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1/1.15);
+}, {passive:false});
+$("zoomIn").addEventListener("click", ()=>{
+  const r = stage.getBoundingClientRect();
+  zoomAt(r.width/2, r.height/2, 1.3);
+});
+$("zoomOut").addEventListener("click", ()=>{
+  const r = stage.getBoundingClientRect();
+  zoomAt(r.width/2, r.height/2, 1/1.3);
+});
+$("zoomReset").addEventListener("click", resetView);
+
+/* pinch-to-zoom (touch) */
+const pointers = new Map();
+let pinch = null;
+stage.addEventListener("pointerdown", e=>{
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pointers.size === 2){
+    drag = null;                       // cancel any single-pointer drag
+    const [a,b] = [...pointers.values()];
+    const r = stage.getBoundingClientRect();
+    pinch = {
+      d0: Math.hypot(a.x-b.x, a.y-b.y),
+      mid0: {x:(a.x+b.x)/2 - r.left, y:(a.y+b.y)/2 - r.top},
+      s0: view.scale, tx0: view.tx, ty0: view.ty
+    };
+  }
+});
+stage.addEventListener("pointermove", e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinch && pointers.size >= 2){
+    const [a,b] = [...pointers.values()];
+    const r = stage.getBoundingClientRect();
+    const d = Math.hypot(a.x-b.x, a.y-b.y) || 1;
+    const mid = {x:(a.x+b.x)/2 - r.left, y:(a.y+b.y)/2 - r.top};
+    const s1 = clamp(pinch.s0 * d/pinch.d0, 1, MAX_ZOOM);
+    view.scale = s1;
+    view.tx = mid.x - (pinch.mid0.x - pinch.tx0)*(s1/pinch.s0);
+    view.ty = mid.y - (pinch.mid0.y - pinch.ty0)*(s1/pinch.s0);
+    clampView(); applyView();
+  }
+});
+["pointerup","pointercancel"].forEach(ev=>stage.addEventListener(ev, e=>{
+  pointers.delete(e.pointerId);
+  if(pointers.size < 2) pinch = null;
+}));
+
+/* ================= Helpers ================= */
+const COARSE = matchMedia("(pointer: coarse)").matches;
+function unit(){ return Math.max(state.imgW, state.imgH) / 100; } // 1 "unit" ≈ 1% of image
+
+/* Convert a desired on-screen (CSS px) hit radius into image px,
+   accounting for display scale and zoom — keeps touch targets usable. */
+function minHitImg(cssPx){
+  if(!state.imgW || !zoomWrap.offsetWidth) return 0;
+  const cssPerImg = (zoomWrap.offsetWidth / state.imgW) * view.scale;
+  return cssPx / cssPerImg;
+}
+const HIT_CSS = COARSE ? 24 : 16;   // minimum hit radius on screen
+
+/* Throttle drag re-renders to animation frames (mobile perf) */
+let rafPending = false;
+function scheduleRender(){
+  if(rafPending || !state.imgW) return;
+  rafPending = true;
+  requestAnimationFrame(()=>{ rafPending = false; renderAll(true); });
+}
+
+/* Save a blob: native share sheet on touch devices, download fallback */
+function dataURLtoBlob(durl){
+  const [head, b64] = durl.split(",");
+  const mime = (head.match(/data:(.*?);/) || [,"image/png"])[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type:mime});
+}
+async function saveImage(blob, filename){
+  if(COARSE && navigator.share && navigator.canShare){
+    const file = new File([blob], filename, {type: blob.type});
+    if(navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title: filename});
+        return true;
+      }catch(err){
+        if(err && err.name === "AbortError") return false; // user cancelled
+        // otherwise fall through to download
+      }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.download = filename; a.href = url; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  return true;
+}
+
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>toast.classList.remove("show"), 1800);
+}
+function svgPoint(evt){
+  const pt = overlay.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  return pt.matrixTransform(overlay.getScreenCTM().inverse());
+}
+const clamp = (v,min,max)=>Math.min(max,Math.max(min,v));
+
+/* ================= Image upload ================= */
+function loadImage(file){
+  if(!file || !file.type.startsWith("image/")){ showToast("That doesn't look like an image."); return; }
+  const url = URL.createObjectURL(file);
+  wallImg.onload = () => {
+    state.imgW = wallImg.naturalWidth;
+    state.imgH = wallImg.naturalHeight;
+    overlay.setAttribute("viewBox", `0 0 ${state.imgW} ${state.imgH}`);
+    dropzone.style.display = "none";
+    stage.style.display = "block";
+    resetView();
+    if(!state.joints) initFigure();
+    renderAll();
+    showToast("Wall loaded. Mark your holds.");
+  };
+  wallImg.src = url;
+}
+$("uploadBtn").addEventListener("click", ()=>fileInput.click());
+dropzone.addEventListener("click", ()=>fileInput.click());
+dropzone.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" ") fileInput.click(); });
+fileInput.addEventListener("change", e=>loadImage(e.target.files[0]));
+
+["dragover","dragenter"].forEach(ev=>document.addEventListener(ev, e=>{
+  e.preventDefault(); dropzone.classList.add("dragover");
+}));
+["dragleave","drop"].forEach(ev=>document.addEventListener(ev, e=>{
+  e.preventDefault(); dropzone.classList.remove("dragover");
+}));
+document.addEventListener("drop", e=>{
+  const f = e.dataTransfer?.files?.[0];
+  if(f) loadImage(f);
+});
+
+/* ================= Modes ================= */
+function setMode(m){
+  state.mode = m;
+  $("modeHold").classList.toggle("active", m==="hold");
+  $("modeMove").classList.toggle("active", m==="move");
+  overlay.classList.toggle("mode-hold", m==="hold");
+}
+$("modeHold").addEventListener("click", ()=>setMode("hold"));
+$("modeMove").addEventListener("click", ()=>setMode("move"));
+
+/* ================= Holds ================= */
+overlay.addEventListener("pointerdown", e=>{
+  if(state.mode!=="hold") return;
+  if(e.target !== overlay) return;            // clicked empty space, not a marker/joint
+  const p = svgPoint(e);
+  const hold = {
+    id: state.nextId++,
+    x: clamp(p.x, 0, state.imgW),
+    y: clamp(p.y, 0, state.imgH),
+    name: "",
+    color: HOLD_COLORS[0]
+  };
+  state.holds.push(hold);
+  state.selectedHold = hold.id;
+  renderAll();
+  openNamePopup(hold);
+});
+
+function openNamePopup(hold){
+  // position the popup over the marker (convert image coords -> screen)
+  const ctm = overlay.getScreenCTM();
+  const pt = overlay.createSVGPoint();
+  pt.x = hold.x; pt.y = hold.y;
+  const sp = pt.matrixTransform(ctm);
+  const stageRect = stage.getBoundingClientRect();
+  namePop.style.left = clamp(sp.x - stageRect.x + 14, 4, stageRect.width-160) + "px";
+  namePop.style.top  = clamp(sp.y - stageRect.y - 14, 4, stageRect.height-40) + "px";
+  namePop.style.display = "block";
+  nameInput.value = hold.name;
+  nameInput.dataset.holdId = hold.id;
+  nameInput.focus();
+}
+function commitName(){
+  const id = Number(nameInput.dataset.holdId);
+  const hold = state.holds.find(h=>h.id===id);
+  if(hold) hold.name = nameInput.value.trim();
+  namePop.style.display = "none";
+  renderAll();
+}
+nameInput.addEventListener("keydown", e=>{
+  if(e.key==="Enter") commitName();
+  if(e.key==="Escape"){ namePop.style.display="none"; renderAll(); }
+});
+nameInput.addEventListener("blur", ()=>{ if(namePop.style.display==="block") commitName(); });
+
+function deleteHold(id){
+  state.holds = state.holds.filter(h=>h.id!==id);
+  if(state.selectedHold===id) state.selectedHold=null;
+  for(const k in LIMBS) if(state.anchors[k]===id) state.anchors[k]=null;
+  renderAll();
+}
+
+/* ---- color popover ---- */
+let colorTargetId = null;
+HOLD_COLORS.forEach(c=>{
+  const b = document.createElement("button");
+  b.style.background = c;
+  b.setAttribute("aria-label","Set hold colour "+c);
+  b.addEventListener("click", ()=>{
+    const h = state.holds.find(h=>h.id===colorTargetId);
+    if(h){ h.color = c; renderAll(); }
+    colorPop.classList.remove("open");
+  });
+  colorPop.appendChild(b);
+});
+function openColorPop(anchor, holdId){
+  colorTargetId = holdId;
+  const r = anchor.getBoundingClientRect();
+  colorPop.style.left = clamp(r.left, 8, window.innerWidth-220)+"px";
+  colorPop.style.top = (r.bottom+6)+"px";
+  colorPop.classList.add("open");
+}
+document.addEventListener("pointerdown", e=>{
+  if(!colorPop.contains(e.target) && !e.target.classList.contains("swatch"))
+    colorPop.classList.remove("open");
+});
+
+/* ================= Figure ================= */
+function initFigure(){
+  const cx = state.imgW/2, cy = state.imgH/2;
+  const u = unit()*state.figScale;
+  // a climbing-ish default pose: arms up and out, legs wide
+  state.joints = {
+    hip:    {x:cx,        y:cy},
+    neck:   {x:cx,        y:cy-9*u},
+    head:   {x:cx,        y:cy-12*u},
+    lElbow: {x:cx-5*u,    y:cy-12*u},
+    lHand:  {x:cx-8*u,    y:cy-16*u},
+    rElbow: {x:cx+5*u,    y:cy-12*u},
+    rHand:  {x:cx+8*u,    y:cy-16*u},
+    lKnee:  {x:cx-5*u,    y:cy+4*u},
+    lFoot:  {x:cx-7*u,    y:cy+9*u},
+    rKnee:  {x:cx+5*u,    y:cy+4*u},
+    rFoot:  {x:cx+7*u,    y:cy+9*u}
+  };
+  clearAnchors();
+  computeAllLens();
+}
+const BONES = [
+  ["neck","head"],["hip","neck"],
+  ["neck","lElbow"],["lElbow","lHand"],
+  ["neck","rElbow"],["rElbow","rHand"],
+  ["hip","lKnee"],["lKnee","lFoot"],
+  ["hip","rKnee"],["rKnee","rFoot"]
+];
+
+/* ---- anchoring: pin hands/feet to holds ---- */
+const LIMBS = {
+  lHand:{base:"neck", mid:"lElbow"},
+  rHand:{base:"neck", mid:"rElbow"},
+  lFoot:{base:"hip",  mid:"lKnee"},
+  rFoot:{base:"hip",  mid:"rKnee"}
+};
+const MID_TO_LIMB = {lElbow:"lHand", rElbow:"rHand", lKnee:"lFoot", rKnee:"rFoot"};
+const LIMB_NAMES = {lHand:"Left hand", rHand:"Right hand", lFoot:"Left foot", rFoot:"Right foot"};
+const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+
+function computeLen(key){
+  const {base, mid} = LIMBS[key];
+  const J = state.joints;
+  state.limbLens[key] = {L1: dist(J[base], J[mid]), L2: dist(J[mid], J[key])};
+}
+function computeAllLens(){ for(const k in LIMBS) computeLen(k); }
+function clearAnchors(){ state.anchors = {lHand:null, rHand:null, lFoot:null, rFoot:null}; }
+function anchorHold(key){
+  const id = state.anchors[key];
+  if(id==null) return null;
+  const h = state.holds.find(h=>h.id===id);
+  if(!h){ state.anchors[key] = null; return null; }
+  return h;
+}
+
+/* Pin the limb's end to its hold and place the elbow/knee with 2-bone IK.
+   If the hold is out of reach the limb stretches (body scales). */
+function solveLimbIK(key){
+  const hold = anchorHold(key);
+  if(!hold) return;
+  const {base, mid} = LIMBS[key];
+  const J = state.joints;
+  const B = J[base], M = J[mid], E = J[key];
+  E.x = hold.x; E.y = hold.y;
+  const lens = state.limbLens[key] || (computeLen(key), state.limbLens[key]);
+  const L1 = lens.L1, L2 = lens.L2;
+  const dx = E.x-B.x, dy = E.y-B.y;
+  const D = Math.hypot(dx, dy) || 1e-6;
+  const ux = dx/D, uy = dy/D;
+  if(D >= L1+L2){
+    // out of reach: stretch the limb proportionally along the line
+    const t = L1/(L1+L2 || 1);
+    M.x = B.x + dx*t; M.y = B.y + dy*t;
+  } else {
+    const a1 = (L1*L1 - L2*L2 + D*D) / (2*D);
+    const h = Math.sqrt(Math.max(0, L1*L1 - a1*a1));
+    // two mirror solutions: keep whichever bend is closest to the current pose
+    const c1 = {x: B.x + a1*ux - h*uy, y: B.y + a1*uy + h*ux};
+    const c2 = {x: B.x + a1*ux + h*uy, y: B.y + a1*uy - h*ux};
+    const pick = dist(c1, M) <= dist(c2, M) ? c1 : c2;
+    M.x = pick.x; M.y = pick.y;
+  }
+}
+function reapplyAnchors(){ for(const k in LIMBS) solveLimbIK(k); }
+
+function setAnchor(key, hold){
+  if(state.anchors[key] === hold.id) return;
+  state.anchors[key] = hold.id;
+  state.joints[key].x = hold.x;
+  state.joints[key].y = hold.y;
+  computeLen(key);
+  showToast(LIMB_NAMES[key] + " → " + (hold.name || "hold"));
+}
+function releaseAnchor(key){
+  if(state.anchors[key]==null) return;
+  state.anchors[key] = null;
+  showToast(LIMB_NAMES[key] + " released.");
+}
+/* Magnetic snap while dragging a hand/foot */
+function endEffectorSnap(key){
+  const j = state.joints[key];
+  const snapR = Math.max(unit()*2.4, minHitImg(HIT_CSS + 6));
+  let nearest = null, nd = Infinity;
+  state.holds.forEach(h=>{
+    const d = Math.hypot(h.x-j.x, h.y-j.y);
+    if(d < nd){ nd = d; nearest = h; }
+  });
+  if(nearest && nd <= snapR){
+    j.x = nearest.x; j.y = nearest.y;
+    setAnchor(key, nearest);
+  } else {
+    releaseAnchor(key);
+  }
+}
+$("toggleFigure").addEventListener("click", ()=>{
+  if(!state.imgW){ showToast("Upload a wall photo first."); return; }
+  state.figureVisible = !state.figureVisible;
+  $("toggleFigure").classList.toggle("active", state.figureVisible);
+  renderAll();
+});
+$("figScale").addEventListener("input", e=>{
+  const newScale = Number(e.target.value);
+  if(state.joints){
+    const f = newScale/state.figScale;
+    const hip = state.joints.hip;
+    for(const k in state.joints){
+      if(k==="hip") continue;
+      state.joints[k].x = hip.x + (state.joints[k].x-hip.x)*f;
+      state.joints[k].y = hip.y + (state.joints[k].y-hip.y)*f;
+    }
+  }
+  state.figScale = newScale;
+  if(state.joints){ computeAllLens(); reapplyAnchors(); }
+  renderAll();
+});
+$("resetPose").addEventListener("click", ()=>{
+  if(!state.imgW) return;
+  initFigure(); renderAll();
+});
+$("clearAll").addEventListener("click", ()=>{
+  state.holds = []; state.selectedHold = null;
+  clearAnchors();
+  if(state.imgW) initFigure();
+  renderAll();
+  showToast("Board cleared.");
+});
+
+/* ================= Dragging (holds, joints, whole figure) ================= */
+let drag = null; // {type:"hold"|"joint"|"figure", id/key, offsets}
+overlay.addEventListener("pointerdown", e=>{
+  const t = e.target;
+  if(t.dataset.holdId && state.mode==="move"){
+    const h = state.holds.find(h=>h.id===Number(t.dataset.holdId));
+    state.selectedHold = h.id;
+    const p = svgPoint(e);
+    drag = {type:"hold", hold:h, dx:h.x-p.x, dy:h.y-p.y};
+    overlay.setPointerCapture(e.pointerId);
+    renderAll();
+  } else if(t.dataset.joint){
+    const p = svgPoint(e);
+    if(t.dataset.joint==="hip"){
+      // dragging the hip moves the whole climber
+      const offsets = {};
+      for(const k in state.joints) offsets[k] = {dx:state.joints[k].x-p.x, dy:state.joints[k].y-p.y};
+      drag = {type:"figure", offsets};
+    } else {
+      const j = state.joints[t.dataset.joint];
+      drag = {type:"joint", key:t.dataset.joint, dx:j.x-p.x, dy:j.y-p.y,
+              sx:e.clientX, sy:e.clientY, moved:false};
+    }
+    overlay.setPointerCapture(e.pointerId);
+  } else if(t === overlay && state.mode==="move" && view.scale > 1){
+    // drag empty background to pan while zoomed
+    drag = {type:"pan", sx:e.clientX, sy:e.clientY, tx0:view.tx, ty0:view.ty};
+    overlay.setPointerCapture(e.pointerId);
+  }
+});
+overlay.addEventListener("pointermove", e=>{
+  if(!drag) return;
+  if(drag.type==="pan"){
+    view.tx = drag.tx0 + (e.clientX - drag.sx);
+    view.ty = drag.ty0 + (e.clientY - drag.sy);
+    clampView(); applyView();
+    return;
+  }
+  const p = svgPoint(e);
+  if(drag.type==="hold"){
+    drag.hold.x = clamp(p.x+drag.dx, 0, state.imgW);
+    drag.hold.y = clamp(p.y+drag.dy, 0, state.imgH);
+    // anchored limbs ride along with the hold
+    for(const k in LIMBS) if(state.anchors[k]===drag.hold.id) solveLimbIK(k);
+  } else if(drag.type==="joint"){
+    if(!drag.moved && Math.hypot(e.clientX-drag.sx, e.clientY-drag.sy) > 8) drag.moved = true;
+    const j = state.joints[drag.key];
+    j.x = clamp(p.x+drag.dx, 0, state.imgW);
+    j.y = clamp(p.y+drag.dy, 0, state.imgH);
+    if(LIMBS[drag.key]){
+      // hand/foot: magnetic attach/detach against nearby holds
+      if(drag.moved) endEffectorSnap(drag.key);
+    } else if(drag.key==="neck"){
+      // torso moved: anchored arms stay on their holds
+      solveLimbIK("lHand"); solveLimbIK("rHand");
+      if(state.anchors.lHand==null) computeLen("lHand");
+      if(state.anchors.rHand==null) computeLen("rHand");
+    } else if(MID_TO_LIMB[drag.key]){
+      // elbow/knee posed manually: remember the new bend as natural length
+      computeLen(MID_TO_LIMB[drag.key]);
+    }
+  } else if(drag.type==="figure"){
+    for(const k in state.joints){
+      if(LIMBS[k] && state.anchors[k]!=null) continue;  // pinned limbs stay put
+      state.joints[k].x = p.x+drag.offsets[k].dx;
+      state.joints[k].y = p.y+drag.offsets[k].dy;
+    }
+    reapplyAnchors();
+  }
+  scheduleRender();
+});
+overlay.addEventListener("pointerup", e=>{
+  // a tap (no movement) on an anchored hand/foot releases it — touch-friendly detach
+  if(drag && drag.type==="joint" && !drag.moved && LIMBS[drag.key] && state.anchors[drag.key]!=null){
+    releaseAnchor(drag.key);
+    renderAll();
+  }
+  drag = null;
+});
+overlay.addEventListener("pointercancel", ()=>{ drag = null; });
+
+/* ================= Rendering (SVG) ================= */
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs){
+  const n = document.createElementNS(SVGNS, name);
+  for(const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function renderHoldsSVG(){
+  holdLayer.innerHTML = "";
+  const u = unit();
+  state.holds.forEach(h=>{
+    const g = el("g",{class:"hold-marker"});
+    const sel = state.selectedHold===h.id;
+    // chalk-circle style marker
+    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*1.9, fill:"none",
+      stroke:h.color, "stroke-width":u*0.5,
+      "stroke-dasharray": sel ? "" : `${u*1.2} ${u*0.7}`}));
+    g.appendChild(el("circle",{cx:h.x, cy:h.y, r:u*0.45, fill:h.color}));
+    // invisible fat hit area (never smaller than a fingertip on screen)
+    const hit = el("circle",{cx:h.x, cy:h.y, r:Math.max(u*2.6, minHitImg(HIT_CSS)), fill:"transparent"});
+    hit.dataset.holdId = h.id;
+    g.appendChild(hit);
+    if(h.name){
+      const label = el("text",{
+        x:h.x + u*2.5, y:h.y - u*1.6,
+        "font-size":u*2.1,
+        "font-family":"'IBM Plex Mono',monospace",
+        "font-weight":"600",
+        fill:h.color,
+        stroke:"rgba(0,0,0,.85)","stroke-width":u*0.55,
+        "paint-order":"stroke"
+      });
+      label.textContent = h.name;
+      g.appendChild(label);
+    }
+    hit.addEventListener("dblclick", ()=>openNamePopup(h));
+    holdLayer.appendChild(g);
+  });
+}
+function renderFigureSVG(){
+  figureLayer.innerHTML = "";
+  if(!state.figureVisible || !state.joints) return;
+  const u = unit();
+  const J = state.joints;
+  const stroke = u*0.9;
+  // bones with dark outline for visibility on any photo
+  BONES.forEach(([a,b])=>{
+    figureLayer.appendChild(el("line",{x1:J[a].x,y1:J[a].y,x2:J[b].x,y2:J[b].y,
+      stroke:"rgba(0,0,0,.75)","stroke-width":stroke*1.8,"stroke-linecap":"round"}));
+  });
+  BONES.forEach(([a,b])=>{
+    figureLayer.appendChild(el("line",{x1:J[a].x,y1:J[a].y,x2:J[b].x,y2:J[b].y,
+      stroke:"#ffd23f","stroke-width":stroke,"stroke-linecap":"round"}));
+  });
+  // head
+  const headR = u*1.7;
+  figureLayer.appendChild(el("circle",{cx:J.head.x,cy:J.head.y,r:headR,
+    fill:"#ffd23f",stroke:"rgba(0,0,0,.75)","stroke-width":u*0.4}));
+  // anchor rings on pinned hands/feet
+  for(const k in LIMBS){
+    const hold = anchorHold(k);
+    if(!hold) continue;
+    figureLayer.appendChild(el("circle",{cx:J[k].x,cy:J[k].y,r:u*1.55,
+      fill:"none",stroke:hold.color,"stroke-width":u*0.38,
+      "pointer-events":"none"}));
+  }
+  // joints: visuals (non-interactive) + enlarged transparent hit circles
+  for(const k in J){
+    const isHip = k==="hip", isHead = k==="head";
+    const anch = LIMBS[k] ? anchorHold(k) : null;
+    const r = isHip ? u*1.3 : (isHead ? headR : u*0.95);
+    figureLayer.appendChild(el("circle",{cx:J[k].x,cy:J[k].y,r:r,
+      fill: anch ? anch.color : (isHip ? "#ffffff" : (isHead ? "transparent" : "#1d2129")),
+      stroke: anch ? "#1d2129" : (isHip ? "#1d2129" : (isHead ? "transparent" : "#ffd23f")),
+      "stroke-width":u*0.35,
+      "pointer-events":"none"}));
+  }
+  const hitR = Math.max(u*1.7, minHitImg(HIT_CSS));
+  for(const k in J){
+    const isHip = k==="hip", isHead = k==="head";
+    const hr = isHead ? Math.max(headR, hitR) : (isHip ? Math.max(u*1.6, hitR) : hitR);
+    const c = el("circle",{class:"joint",cx:J[k].x,cy:J[k].y,r:hr,fill:"transparent"});
+    c.dataset.joint = k;
+    if(LIMBS[k]){
+      const anch = anchorHold(k);
+      const t = el("title",{});
+      t.textContent = anch
+        ? LIMB_NAMES[k]+" anchored to "+(anch.name||"hold")+" — tap, double-click, or drag away to release"
+        : LIMB_NAMES[k]+" — drag onto a hold to anchor";
+      c.appendChild(t);
+      c.addEventListener("dblclick", ()=>{
+        if(state.anchors[k]!=null){ releaseAnchor(k); renderAll(); }
+      });
+    }
+    figureLayer.appendChild(c);
+  }
+}
+
+/* ================= Sidebar list ================= */
+function renderList(){
+  holdCount.textContent = state.holds.length;
+  holdList.innerHTML = "";
+  if(!state.holds.length){
+    const d = document.createElement("div");
+    d.className = "empty-note";
+    d.innerHTML = "No holds yet. Choose <b>Mark holds</b> and click the photo where each hold is.";
+    holdList.appendChild(d);
+    return;
+  }
+  state.holds.forEach(h=>{
+    const item = document.createElement("div");
+    item.className = "hold-item" + (state.selectedHold===h.id ? " selected" : "");
+    const sw = document.createElement("button");
+    sw.className = "swatch"; sw.style.background = h.color;
+    sw.title = "Change colour";
+    sw.addEventListener("click", ()=>openColorPop(sw, h.id));
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.value = h.name; inp.placeholder = "Unnamed hold";
+    inp.addEventListener("input", ()=>{ h.name = inp.value; renderHoldsSVG(); });
+    inp.addEventListener("focus", ()=>{ state.selectedHold = h.id; renderHoldsSVG(); });
+    const del = document.createElement("button");
+    del.className = "del"; del.textContent = "✕"; del.title = "Delete hold";
+    del.addEventListener("click", ()=>deleteHold(h.id));
+    item.append(sw, inp, del);
+    holdList.appendChild(item);
+  });
+}
+function renderAll(skipList){
+  renderHoldsSVG();
+  renderFigureSVG();
+  if(!skipList) renderList();
+  else holdCount.textContent = state.holds.length;
+}
+
+/* ================= Snapshot rendering ================= */
+function renderComposite(){
+  const cv = document.createElement("canvas");
+  cv.width = state.imgW; cv.height = state.imgH;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(wallImg, 0, 0, state.imgW, state.imgH);
+  const u = unit();
+
+  // holds
+  state.holds.forEach(h=>{
+    ctx.save();
+    ctx.strokeStyle = h.color;
+    ctx.lineWidth = u*0.5;
+    if(state.selectedHold!==h.id) ctx.setLineDash([u*1.2, u*0.7]);
+    ctx.beginPath(); ctx.arc(h.x, h.y, u*1.9, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = h.color;
+    ctx.beginPath(); ctx.arc(h.x, h.y, u*0.45, 0, Math.PI*2); ctx.fill();
+    if(h.name){
+      ctx.font = `600 ${u*2.1}px 'IBM Plex Mono', monospace`;
+      ctx.textBaseline = "alphabetic";
+      ctx.lineWidth = u*0.55;
+      ctx.strokeStyle = "rgba(0,0,0,.85)";
+      ctx.lineJoin = "round";
+      ctx.strokeText(h.name, h.x + u*2.5, h.y - u*1.6);
+      ctx.fillText(h.name, h.x + u*2.5, h.y - u*1.6);
+    }
+    ctx.restore();
+  });
+
+  // figure
+  if(state.figureVisible && state.joints){
+    const J = state.joints, stroke = u*0.9;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(0,0,0,.75)";
+    ctx.lineWidth = stroke*1.8;
+    BONES.forEach(([a,b])=>{ ctx.beginPath(); ctx.moveTo(J[a].x,J[a].y); ctx.lineTo(J[b].x,J[b].y); ctx.stroke(); });
+    ctx.strokeStyle = "#ffd23f";
+    ctx.lineWidth = stroke;
+    BONES.forEach(([a,b])=>{ ctx.beginPath(); ctx.moveTo(J[a].x,J[a].y); ctx.lineTo(J[b].x,J[b].y); ctx.stroke(); });
+    ctx.fillStyle = "#ffd23f";
+    ctx.strokeStyle = "rgba(0,0,0,.75)";
+    ctx.lineWidth = u*0.4;
+    ctx.beginPath(); ctx.arc(J.head.x, J.head.y, u*1.7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  }
+
+  // if zoomed in, crop the snapshot to exactly what's visible on screen
+  if(view.scale > 1.01){
+    const w0 = zoomWrap.offsetWidth, h0 = zoomWrap.offsetHeight;
+    const pxPerCss = state.imgW / w0;              // image px per CSS px
+    const sx = clamp((-view.tx/view.scale) * pxPerCss, 0, state.imgW);
+    const sy = clamp((-view.ty/view.scale) * pxPerCss, 0, state.imgH);
+    const sw = Math.min(state.imgW - sx, state.imgW/view.scale);
+    const sh = Math.min(state.imgH - sy, state.imgH/view.scale);
+    if(sw > 2 && sh > 2){
+      const crop = document.createElement("canvas");
+      crop.width = Math.round(sw); crop.height = Math.round(sh);
+      crop.getContext("2d").drawImage(cv, sx, sy, sw, sh, 0, 0, crop.width, crop.height);
+      return crop;
+    }
+  }
+  return cv;
+}
+
+/* ================= Timeline ================= */
+const frames = [];   // {id, dataURL, note, snap:{holds,joints,figureVisible,figScale}}
+let nextFrameId = 1;
+const timelineBar = $("timelineBar"), timelineTrack = $("timelineTrack"), frameCount = $("frameCount");
+
+function snapshotState(){
+  return JSON.parse(JSON.stringify({
+    holds: state.holds,
+    joints: state.joints,
+    figureVisible: state.figureVisible,
+    figScale: state.figScale,
+    anchors: state.anchors,
+    limbLens: state.limbLens
+  }));
+}
+function restoreFrame(frame){
+  const s = JSON.parse(JSON.stringify(frame.snap));
+  state.holds = s.holds;
+  state.joints = s.joints;
+  state.figureVisible = s.figureVisible;
+  state.figScale = s.figScale;
+  state.anchors = s.anchors || {lHand:null, rHand:null, lFoot:null, rFoot:null};
+  state.limbLens = s.limbLens || {};
+  if(state.joints && !s.limbLens) computeAllLens();
+  state.selectedHold = null;
+  $("figScale").value = s.figScale;
+  $("toggleFigure").classList.toggle("active", s.figureVisible);
+  renderAll();
+  showToast("Frame " + (frames.indexOf(frame)+1) + " restored.");
+}
+
+$("snapshotBtn").addEventListener("click", ()=>{
+  if(!state.imgW){ showToast("Upload a wall photo first."); return; }
+  try{
+    const cv = renderComposite();
+    frames.push({
+      id: nextFrameId++,
+      dataURL: cv.toDataURL("image/png"),
+      note: "",
+      snap: snapshotState()
+    });
+    renderTimeline();
+    showToast("Frame " + frames.length + " added to the timeline.");
+    timelineTrack.scrollTo({left: timelineTrack.scrollWidth, behavior:"smooth"});
+  }catch(err){
+    showToast("Couldn't capture — try re-uploading the photo.");
+  }
+});
+
+function deleteFrame(id){
+  const i = frames.findIndex(f=>f.id===id);
+  if(i>-1) frames.splice(i,1);
+  renderTimeline();
+}
+function downloadFrame(frame){
+  saveImage(dataURLtoBlob(frame.dataURL), "beta-frame-" + (frames.indexOf(frame)+1) + ".png");
+}
+
+function renderTimeline(){
+  frameCount.textContent = frames.length;
+  timelineBar.hidden = frames.length===0;
+  document.body.classList.toggle("has-timeline", frames.length>0);
+  timelineTrack.innerHTML = "";
+  frames.forEach((f, i)=>{
+    const card = document.createElement("div");
+    card.className = "frame";
+    card.tabIndex = 0;
+    card.title = "Click to restore this frame's holds and pose";
+    const img = document.createElement("img");
+    img.src = f.dataURL; img.alt = "Beta frame " + (i+1);
+    const num = document.createElement("span");
+    num.className = "num"; num.textContent = i+1;
+    const actions = document.createElement("div");
+    actions.className = "frame-actions";
+    const dl = document.createElement("button");
+    dl.textContent = "⬇"; dl.title = "Download this frame";
+    dl.addEventListener("click", e=>{ e.stopPropagation(); downloadFrame(f); });
+    const del = document.createElement("button");
+    del.textContent = "✕"; del.title = "Delete this frame";
+    del.addEventListener("click", e=>{ e.stopPropagation(); deleteFrame(f.id); });
+    actions.append(dl, del);
+    card.append(img, num, actions);
+    card.addEventListener("click", ()=>restoreFrame(f));
+    card.addEventListener("keydown", e=>{ if(e.key==="Enter") restoreFrame(f); });
+    timelineTrack.appendChild(card);
+
+    if(i < frames.length-1){
+      const arrow = document.createElement("div");
+      arrow.className = "tl-arrow";
+      const shaft = document.createElement("div");
+      shaft.className = "shaft"; shaft.textContent = "⟶";
+      const ta = document.createElement("textarea");
+      ta.placeholder = "Describe the move…";
+      ta.maxLength = 200;
+      ta.value = f.note;
+      ta.addEventListener("input", ()=>{ f.note = ta.value; });
+      arrow.append(shaft, ta);
+      timelineTrack.appendChild(arrow);
+    }
+  });
+}
+
+/* ================= Timeline export ================= */
+function wrapText(ctx, text, maxWidth){
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for(const w of words){
+    const test = line ? line + " " + w : w;
+    if(ctx.measureText(test).width > maxWidth && line){ lines.push(line); line = w; }
+    else line = test;
+  }
+  if(line) lines.push(line);
+  return lines;
+}
+
+$("exportTimeline").addEventListener("click", async ()=>{
+  if(!frames.length) return;
+  const btn = $("exportTimeline");
+  btn.disabled = true; btn.textContent = "Exporting…";
+  try{
+    // load all frame images
+    const imgs = await Promise.all(frames.map(f=>new Promise((res,rej)=>{
+      const im = new Image();
+      im.onload = ()=>res(im);
+      im.onerror = rej;
+      im.src = f.dataURL;
+    })));
+
+    const FRAME_W = 620, PAD = 60, HEADER = 120, ROW_GAP = 56;
+    const GAP_W = 340;               // arrow + note column between the two frames
+    const NOTE_FONT = "500 22px 'IBM Plex Mono', monospace";
+    const LINE_H = 30;
+    const NOTE_W = GAP_W - 50;       // wrap width for notes
+
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = NOTE_FONT;
+    const heights = imgs.map(im=>im.height * (FRAME_W/im.width));
+
+    // one row per move: [frame i] -> arrow+note -> [frame i+1]
+    const rows = [];
+    for(let i=0; i<frames.length-1; i++){
+      rows.push({
+        a:i, b:i+1,
+        lines: frames[i].note ? wrapText(measure, frames[i].note, NOTE_W) : [],
+        h: Math.max(heights[i], heights[i+1], 260)
+      });
+    }
+
+    const cv = document.createElement("canvas");
+    if(rows.length){
+      cv.width = PAD*2 + FRAME_W*2 + GAP_W;
+      cv.height = Math.ceil(HEADER + rows.reduce((s,r)=>s+r.h,0)
+                + ROW_GAP*(rows.length-1) + PAD);
+    }else{
+      // single frame: nothing to pair, export it alone
+      cv.width = PAD*2 + FRAME_W;
+      cv.height = Math.ceil(HEADER + heights[0] + PAD);
+    }
+    const ctx = cv.getContext("2d");
+
+    // background + header
+    ctx.fillStyle = "#14161b";
+    ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.fillStyle = "#ffd23f";
+    ctx.beginPath(); ctx.arc(PAD+18, HEADER/2, 16, 0, Math.PI*2); ctx.fill();
+    ctx.font = "800 52px 'Big Shoulders Display', sans-serif";
+    ctx.fillStyle = "#ece7db";
+    ctx.textBaseline = "middle";
+    ctx.fillText("BETA TIMELINE", PAD+52, HEADER/2);
+    ctx.font = "500 22px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "#9aa0ac";
+    ctx.textAlign = "right";
+    ctx.fillText(frames.length + " frames · " + rows.length + " moves · " + new Date().toLocaleDateString(), cv.width-PAD, HEADER/2);
+    ctx.textAlign = "left";
+
+    function drawFrame(idx, x, y, rowH){
+      const h = heights[idx];
+      const fy = y + (rowH-h)/2;    // vertically centre in the row
+      ctx.drawImage(imgs[idx], x, fy, FRAME_W, h);
+      ctx.strokeStyle = "#323947"; ctx.lineWidth = 2;
+      ctx.strokeRect(x, fy, FRAME_W, h);
+      ctx.fillStyle = "#ffd23f";
+      ctx.beginPath(); ctx.arc(x+36, fy+36, 26, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#1a1503";
+      ctx.font = "700 28px 'IBM Plex Mono', monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(idx+1), x+36, fy+38);
+      ctx.textAlign = "left";
+    }
+
+    if(rows.length){
+      let y = HEADER;
+      const gapX = PAD + FRAME_W;          // gap column left edge
+      const midX = gapX + GAP_W/2;
+      rows.forEach((row, ri)=>{
+        drawFrame(row.a, PAD, y, row.h);
+        drawFrame(row.b, gapX + GAP_W, y, row.h);
+
+        // move label
+        const midY = y + row.h/2;
+        ctx.font = "700 20px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "#9aa0ac";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("MOVE " + (ri+1), midX, midY - 58);
+
+        // rightward arrow
+        const ax0 = gapX + 35, ax1 = gapX + GAP_W - 35;
+        ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 6; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(ax0, midY); ctx.lineTo(ax1, midY); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ax1, midY);
+        ctx.lineTo(ax1-22, midY-14);
+        ctx.moveTo(ax1, midY);
+        ctx.lineTo(ax1-22, midY+14);
+        ctx.stroke();
+
+        // note beneath the arrow, clipped to the row
+        if(row.lines.length){
+          ctx.font = NOTE_FONT;
+          ctx.fillStyle = "#ece7db";
+          ctx.textBaseline = "top";
+          const maxLines = Math.max(1, Math.floor((row.h/2 - 50) / LINE_H));
+          row.lines.slice(0, maxLines).forEach((ln,li)=>{
+            ctx.fillText(ln, midX, midY + 34 + li*LINE_H);
+          });
+        }
+        ctx.textAlign = "left";
+
+        y += row.h + ROW_GAP;
+      });
+    }else{
+      drawFrame(0, PAD, HEADER, heights[0]);
+    }
+
+    const blob = await new Promise(res=>cv.toBlob(res, "image/png"));
+    const saved = await saveImage(blob, "beta-timeline.png");
+    if(saved) showToast("Timeline exported.");
+  }catch(err){
+    showToast("Export failed — try again.");
+  }finally{
+    btn.disabled = false; btn.textContent = "⬇ Export timeline";
+  }
+});
+
+/* ================= Mobile UI: drawer & timeline collapse ================= */
+$("panelBtn").addEventListener("click", ()=>document.body.classList.toggle("drawer-open"));
+$("drawerHandle").addEventListener("click", ()=>document.body.classList.remove("drawer-open"));
+
+function setTlCollapsed(c){
+  document.body.classList.toggle("tl-collapsed", c);
+  $("tlToggle").textContent = c ? "▴" : "▾";
+}
+$("tlToggle").addEventListener("click", ()=>{
+  setTlCollapsed(!document.body.classList.contains("tl-collapsed"));
+});
+// on small/touch screens the timeline starts collapsed to maximise the canvas
+if(matchMedia("(max-width:760px)").matches || COARSE) setTlCollapsed(true);
+
+/* ================= Keyboard shortcuts ================= */
+document.addEventListener("keydown", e=>{
+  const t = e.target;
+  const typing = t.tagName==="INPUT" || t.tagName==="TEXTAREA" || t.isContentEditable;
+  if(e.altKey && !e.ctrlKey && !e.metaKey){
+    const k = e.key.toLowerCase();
+    if(k==="h"){ e.preventDefault(); setMode("hold"); }
+    else if(k==="v"){ e.preventDefault(); setMode("move"); }
+    else if(k==="f"){ e.preventDefault(); $("toggleFigure").click(); }
+    else if(k==="s"){ e.preventDefault(); $("snapshotBtn").click(); }
+    return;
+  }
+  if(typing) return;
+  if((e.key==="Delete"||e.key==="Backspace") && state.selectedHold!=null){
+    deleteHold(state.selectedHold);
+  }
+});
+})();
+</script>
+</body>
+</html>
